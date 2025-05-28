@@ -1,23 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
-install_fish_apt() {
-  # no questions, no TUI
-  sudo env \
-    DEBIAN_FRONTEND=noninteractive \
-    NEEDRESTART_MODE=a \            # auto-restart daemons
-    NEEDRESTART_SVC=1 \             # don’t ask which ones
-    apt-get update -qq
-  sudo env \
-    DEBIAN_FRONTEND=noninteractive \
-    NEEDRESTART_MODE=a \
-    NEEDRESTART_SVC=1 \
-    apt-get install -yq fish
-}
+install_fish_apt() { … }              # keep your existing install code
 
+# 1) install fish if missing
 if ! command -v fish >/dev/null; then
   if   command -v apt-get >/dev/null;   then install_fish_apt
-  elif command -v dnf >/dev/null;       then sudo dnf -y install fish
+  elif command -v dnf   >/dev/null;     then sudo dnf  -y install fish
   elif command -v pacman >/dev/null;    then sudo pacman -Sy --noconfirm fish
   else
     echo "No known package manager found—install fish yourself." >&2
@@ -26,7 +15,15 @@ if ! command -v fish >/dev/null; then
 fi
 
 fish_path="$(command -v fish)"
-grep -qxF "$fish_path" /etc/shells || echo "$fish_path" | sudo tee -a /etc/shells >/dev/null
-chsh -s "$fish_path" "$USER"
 
-[ "$SHELL" != "$fish_path" ] && exec "$fish_path" -l
+# 2) ensure fish is listed in /etc/shells
+grep -qxF "$fish_path" /etc/shells || echo "$fish_path" | sudo tee -a /etc/shells >/dev/null
+
+# 3) switch THIS user only if we’re not already on fish
+current_shell="$(getent passwd "$USER" | cut -d: -f7)"
+if [ "$current_shell" != "$fish_path" ]; then
+  sudo chsh -s "$fish_path" "$USER"
+fi
+
+# 4) drop into fish if we’re still in another shell
+[ "$SHELL" != "$fish_path" ] && setsid "$fish_path" -l </dev/null &>/dev/null &
