@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---------- CONFIG -------------
+KEY="${HOME}/.ssh/id_ed25519"
+SSH_OPTS=(-o BatchMode=yes         # fail fast when key auth isn't ready
+          -o ConnectTimeout=10)    # give up quickly on dead hosts
+# --------------------------------
+
+die() { echo "$*" >&2; exit 1; }
+
+[ $# -ge 1 ] || die "Usage: $(basename "$0") user@host [ssh args …]"
+
+target="$1"; shift
+
+# 1) ensure we have a key
+if [ ! -f "$KEY" ]; then
+  ssh-keygen -t ed25519 -N '' -f "$KEY" </dev/null
+fi
+
+# 2) does key auth already work?
+if ssh "${SSH_OPTS[@]}" -i "$KEY" "$target" exit >/dev/null 2>&1; then
+  exec ssh -i "$KEY" "$target" "$@"
+fi
+
+# 3) key failed → fall back to password once
+read -rp "Password for $target: " -s pass; echo
+if ! command -v sshpass >/dev/null; then
+  die "sshpass not installed (sudo apt install sshpass)"
+fi
+
+sshpass -p "$pass" ssh-copy-id -i "${KEY}.pub" "$target" \
+  || die "ssh-copy-id failed"
+
+echo "Key installed. Connecting…"
+exec ssh -i "$KEY" "$target" "$@"
